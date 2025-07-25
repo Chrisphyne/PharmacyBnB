@@ -62,17 +62,28 @@ export const AuthProvider = ({ children }) => {
       }
 
       try {
-        const response = await authService.verifyToken(token)
-        
-        if (response.success) {
+        // For demo mode, if token exists, assume valid and create demo user
+        if (token.startsWith('demo-jwt-token-')) {
+          const demoUser = {
+            id: 1,
+            name: 'Admin User',
+            firstName: 'Admin',
+            lastName: 'User',
+            email: 'admin@pharmacy.co.ke',
+            role: 'ADMIN',
+            pharmacy: 'PharmaCare Central'
+          }
+          
           dispatch({
             type: 'LOGIN_SUCCESS',
             payload: {
-              user: response.data.user,
+              user: demoUser,
               token
             }
           })
         } else {
+          // For production, use actual API call
+          // const response = await authService.verifyToken(token)
           localStorage.removeItem('token')
           dispatch({ type: 'LOGOUT' })
         }
@@ -86,14 +97,48 @@ export const AuthProvider = ({ children }) => {
     checkAuth()
   }, [])
 
-  const login = async (credentials) => {
+  const login = async (email, password) => {
     try {
       dispatch({ type: 'SET_LOADING', payload: true })
       
-      const response = await authService.login(credentials)
+      // Demo credentials - replace with actual API call
+      const demoUsers = {
+        'admin@pharmacy.co.ke': {
+          id: 1,
+          name: 'Admin User',
+          firstName: 'Admin',
+          lastName: 'User',
+          email: 'admin@pharmacy.co.ke',
+          role: 'ADMIN',
+          pharmacy: 'PharmaCare Central'
+        },
+        'pharmacist@pharmacy.co.ke': {
+          id: 2,
+          name: 'John Pharmacist',
+          firstName: 'John',
+          lastName: 'Pharmacist',
+          email: 'pharmacist@pharmacy.co.ke',
+          role: 'PHARMACIST',
+          pharmacy: 'PharmaCare Central'
+        },
+        'cashier@pharmacy.co.ke': {
+          id: 3,
+          name: 'Jane Cashier',
+          firstName: 'Jane',
+          lastName: 'Cashier',
+          email: 'cashier@pharmacy.co.ke',
+          role: 'CASHIER',
+          pharmacy: 'PharmaCare Central'
+        }
+      }
+
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      const user = demoUsers[email]
       
-      if (response.success) {
-        const { user, token } = response.data
+      if (user && password.includes('123')) {
+        const token = 'demo-jwt-token-' + Date.now()
         
         // Store token in localStorage
         localStorage.setItem('token', token)
@@ -106,15 +151,17 @@ export const AuthProvider = ({ children }) => {
         toast.success(`Welcome back, ${user.firstName}!`)
         return { success: true }
       } else {
-        dispatch({ type: 'SET_ERROR', payload: response.message })
-        toast.error(response.message || 'Login failed')
-        return { success: false, error: response.message }
+        dispatch({ type: 'SET_ERROR', payload: 'Invalid credentials' })
+        toast.error('Invalid email or password')
+        throw new Error('Invalid credentials')
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || 'Login failed'
+      const errorMessage = error.message || 'Login failed'
       dispatch({ type: 'SET_ERROR', payload: errorMessage })
-      toast.error(errorMessage)
-      return { success: false, error: errorMessage }
+      if (!error.message?.includes('Invalid')) {
+        toast.error(errorMessage)
+      }
+      throw error
     }
   }
 
