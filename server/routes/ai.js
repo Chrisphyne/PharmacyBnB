@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const GeminiService = require('../services/geminiService');
-const authMiddleware = require('../middleware/auth');
+const { clerkAuthMiddleware, requirePermission } = require('../middleware/clerkAuth');
 
 // Initialize Gemini service
 const geminiService = new GeminiService();
 
 // Test AI connection
-router.get('/test', authMiddleware, async (req, res) => {
+router.get('/test', clerkAuthMiddleware, async (req, res) => {
   try {
     const result = await geminiService.testConnection();
     res.json(result);
@@ -21,7 +21,7 @@ router.get('/test', authMiddleware, async (req, res) => {
 });
 
 // General AI chat endpoint
-router.post('/chat', authMiddleware, async (req, res) => {
+router.post('/chat', clerkAuthMiddleware, async (req, res) => {
   try {
     const { query, conversationHistory = [] } = req.body;
     
@@ -63,7 +63,7 @@ router.post('/chat', authMiddleware, async (req, res) => {
 });
 
 // Inventory analysis endpoint
-router.post('/analyze-inventory', authMiddleware, async (req, res) => {
+router.post('/analyze-inventory', clerkAuthMiddleware, requirePermission('inventory:read'), async (req, res) => {
   try {
     const { inventoryData } = req.body;
     
@@ -74,13 +74,7 @@ router.post('/analyze-inventory', authMiddleware, async (req, res) => {
       });
     }
 
-    // Check if user has inventory access
-    if (!req.user.permissions.includes('inventory:read') && !req.user.permissions.includes('*')) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions for inventory analysis'
-      });
-    }
+    // Permission already checked by middleware
 
     const result = await geminiService.analyzeInventory(inventoryData);
     
@@ -102,7 +96,7 @@ router.post('/analyze-inventory', authMiddleware, async (req, res) => {
 });
 
 // Drug information endpoint
-router.post('/drug-info', authMiddleware, async (req, res) => {
+router.post('/drug-info', clerkAuthMiddleware, requirePermission('products:read'), async (req, res) => {
   try {
     const { drugName, query } = req.body;
     
@@ -113,13 +107,7 @@ router.post('/drug-info', authMiddleware, async (req, res) => {
       });
     }
 
-    // Check if user has product access
-    if (!req.user.permissions.includes('products:read') && !req.user.permissions.includes('*')) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions for drug information'
-      });
-    }
+    // Permission already checked by middleware
 
     const result = await geminiService.provideDrugInformation(drugName, query);
     
@@ -141,7 +129,7 @@ router.post('/drug-info', authMiddleware, async (req, res) => {
 });
 
 // Sales analysis endpoint
-router.post('/analyze-sales', authMiddleware, async (req, res) => {
+router.post('/analyze-sales', clerkAuthMiddleware, requirePermission('sales:read'), async (req, res) => {
   try {
     const { salesData, timeframe = 'monthly' } = req.body;
     
@@ -152,13 +140,7 @@ router.post('/analyze-sales', authMiddleware, async (req, res) => {
       });
     }
 
-    // Check if user has sales access
-    if (!req.user.permissions.includes('sales:read') && !req.user.permissions.includes('*')) {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions for sales analysis'
-      });
-    }
+    // Permission already checked by middleware
 
     const result = await geminiService.generateSalesReport(salesData, timeframe);
     
@@ -180,7 +162,7 @@ router.post('/analyze-sales', authMiddleware, async (req, res) => {
 });
 
 // Workflow optimization endpoint
-router.post('/optimize-workflow', authMiddleware, async (req, res) => {
+router.post('/optimize-workflow', clerkAuthMiddleware, async (req, res) => {
   try {
     const { currentWorkflow, challenges } = req.body;
     
@@ -223,7 +205,7 @@ router.post('/optimize-workflow', authMiddleware, async (req, res) => {
 });
 
 // Get AI assistant capabilities based on user role
-router.get('/capabilities', authMiddleware, async (req, res) => {
+router.get('/capabilities', clerkAuthMiddleware, async (req, res) => {
   try {
     const capabilities = {
       general_chat: true,
@@ -260,15 +242,9 @@ router.get('/capabilities', authMiddleware, async (req, res) => {
 });
 
 // AI usage statistics (for admins)
-router.get('/usage-stats', authMiddleware, async (req, res) => {
+router.get('/usage-stats', clerkAuthMiddleware, requirePermission('users:manage'), async (req, res) => {
   try {
-    // Check admin permissions
-    if (!req.user.permissions.includes('*') && req.user.role !== 'pharmacy_owner') {
-      return res.status(403).json({
-        success: false,
-        error: 'Insufficient permissions to view usage statistics'
-      });
-    }
+    // Permission already checked by middleware
 
     // This would typically come from a database
     // For now, return mock data
