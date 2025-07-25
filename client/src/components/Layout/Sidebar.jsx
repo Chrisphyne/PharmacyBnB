@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useClerkAuth } from '../../contexts/ClerkAuthContext'
 import {
   HomeIcon,
   CubeIcon,
@@ -11,7 +12,9 @@ import {
   ClipboardDocumentListIcon,
   Bars3Icon,
   XMarkIcon,
-  HeartIcon
+  HeartIcon,
+  UsersIcon,
+  BuildingOfficeIcon
 } from '@heroicons/react/24/outline'
 
 const navigation = [
@@ -22,13 +25,24 @@ const navigation = [
   { name: 'Orders', href: '/orders', icon: ClipboardDocumentListIcon },
   { name: 'Reports', href: '/reports', icon: DocumentTextIcon },
   { name: 'AI Assistant', href: '/ai-assistant', icon: MicrophoneIcon },
+  { name: 'Users', href: '/users', icon: UsersIcon, adminOnly: true },
+  { name: 'Organization', href: '/organization', icon: BuildingOfficeIcon, adminOnly: true },
   { name: 'Settings', href: '/settings', icon: CogIcon },
 ]
 
 const Sidebar = ({ isOpen, setIsOpen }) => {
   const location = useLocation()
+  const { user, hasPermission } = useClerkAuth()
 
   const toggleSidebar = () => setIsOpen(!isOpen)
+
+  // Filter navigation items based on permissions
+  const visibleNavigation = navigation.filter(item => {
+    if (item.adminOnly) {
+      return hasPermission('users:manage') || hasPermission('pharmacy:manage')
+    }
+    return true
+  })
 
   return (
     <div className="flex flex-col h-full">
@@ -80,9 +94,9 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
         </button>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-        {navigation.map((item) => {
+                {/* Navigation */}
+          <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+            {visibleNavigation.map((item) => {
           const isActive = location.pathname === item.href
           return (
             <NavLink
@@ -138,11 +152,15 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
               className="flex items-center space-x-3 p-3 rounded-xl bg-gradient-to-r from-gray-50 to-blue-50"
             >
               <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                <span className="text-white text-sm font-medium">A</span>
+                <span className="text-white text-sm font-medium">
+                  {user?.firstName?.charAt(0) || user?.emailAddress?.charAt(0) || 'U'}
+                </span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">Admin User</p>
-                <p className="text-xs text-gray-500 truncate">admin@pharmacy.co.ke</p>
+                <p className="text-sm font-medium text-gray-900 truncate">
+                  {user?.firstName ? `${user.firstName} ${user.lastName}` : 'User'}
+                </p>
+                <p className="text-xs text-gray-500 truncate">{user?.emailAddress}</p>
               </div>
             </motion.div>
           ) : (
@@ -152,7 +170,9 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
               exit={{ opacity: 0, scale: 0.8 }}
               className="mx-auto w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center"
             >
-              <span className="text-white text-sm font-medium">A</span>
+              <span className="text-white text-sm font-medium">
+                {user?.firstName?.charAt(0) || user?.emailAddress?.charAt(0) || 'U'}
+              </span>
             </motion.div>
           )}
         </AnimatePresence>
