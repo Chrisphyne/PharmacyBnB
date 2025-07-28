@@ -6,7 +6,7 @@ import {
   ShoppingBagIcon,
   ExclamationTriangleIcon,
   UsersIcon,
-  TrendingUpIcon,
+  ArrowArrowTrendingUpIcon,
   ClockIcon,
   PlusIcon,
   MicrophoneIcon,
@@ -171,7 +171,7 @@ const Dashboard = () => {
           value={stats.revenue.value}
           trend={stats.revenue.trend}
           trendValue={stats.revenue.trendValue}
-          icon={TrendingUpIcon}
+          icon={ArrowArrowTrendingUpIcon}
           color="blue"
         />
       </div>
