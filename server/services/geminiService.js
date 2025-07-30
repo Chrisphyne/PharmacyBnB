@@ -8,7 +8,8 @@ class GeminiService {
     }
     
     this.genAI = new GoogleGenerativeAI(this.apiKey);
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-pro' });
+    // Use gemini-1.5-flash for free tier (faster and free)
+    this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     
     // Pharmacy-specific context for better responses
     this.pharmacyContext = `
@@ -45,7 +46,35 @@ You help pharmacists, pharmacy technicians, and other staff with:
       // Build enhanced prompt with context
       const enhancedPrompt = this.buildPrompt(query, userRole, pharmacyData, conversationHistory);
       
-      const result = await this.model.generateContent(enhancedPrompt);
+      // Use generateContent with safety settings for free tier
+      const result = await this.model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: enhancedPrompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 1024, // Reduced for free tier
+        },
+        safetySettings: [
+          {
+            category: 'HARM_CATEGORY_HARASSMENT',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+          },
+          {
+            category: 'HARM_CATEGORY_HATE_SPEECH',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+          },
+          {
+            category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+          },
+          {
+            category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+          },
+        ],
+      });
+
       const response = await result.response;
       const text = response.text();
 
@@ -59,10 +88,20 @@ You help pharmacists, pharmacy technicians, and other staff with:
       };
     } catch (error) {
       console.error('Gemini API error:', error);
+      
+      // Handle specific API errors
+      let errorMessage = 'I apologize, but I encountered an error processing your request. Please try again or contact support if the issue persists.';
+      
+      if (error.message?.includes('quota')) {
+        errorMessage = 'I\'m currently experiencing high demand. Please try again in a few moments.';
+      } else if (error.message?.includes('safety')) {
+        errorMessage = 'I cannot provide information on this topic due to safety guidelines. Please rephrase your question.';
+      }
+      
       return {
         success: false,
         error: error.message,
-        response: 'I apologize, but I encountered an error processing your request. Please try again or contact support if the issue persists.'
+        response: errorMessage
       };
     }
   }
@@ -79,17 +118,17 @@ You help pharmacists, pharmacy technicians, and other staff with:
       if (pharmacyData.location) prompt += ` - ${pharmacyData.location}`;
     }
 
-    // Add conversation history for context
+    // Add conversation history for context (limit to last 2 for free tier)
     if (conversationHistory.length > 0) {
       prompt += '\n\n**Recent Conversation:**';
-      conversationHistory.slice(-3).forEach((msg, index) => {
+      conversationHistory.slice(-2).forEach((msg, index) => {
         prompt += `\n${msg.type === 'user' ? 'User' : 'Assistant'}: ${msg.content}`;
       });
     }
 
     // Add the current query
     prompt += `\n\n**Current Question**: ${query}`;
-    prompt += '\n\nPlease provide a helpful, accurate, and professional response:';
+    prompt += '\n\nPlease provide a helpful, accurate, and professional response in 200 words or less:';
 
     return prompt;
   }
@@ -121,9 +160,8 @@ Please provide:
 2. Expiry date warnings and recommendations
 3. Reorder suggestions with quantities
 4. Cost optimization opportunities
-5. Storage and organization tips
 
-Format your response in a clear, actionable manner.
+Keep response under 300 words and format clearly.
 `;
 
     return this.generateResponse(prompt);
@@ -143,9 +181,10 @@ Please include relevant information about:
 - Side effects and warnings
 - Drug interactions
 - Storage requirements
-- Kenyan regulatory status (if applicable)
 
 **Important**: Always recommend consulting with a licensed pharmacist for patient-specific advice.
+
+Keep response under 250 words.
 `;
 
     return this.generateResponse(prompt);
@@ -163,11 +202,9 @@ Please provide:
 1. Sales performance summary
 2. Top-performing products
 3. Revenue trends and patterns
-4. Customer behavior insights
-5. Recommendations for improvement
-6. Seasonal trends (if applicable)
+4. Recommendations for improvement
 
-Present the analysis in a professional business report format suitable for pharmacy management.
+Present analysis in under 300 words suitable for pharmacy management.
 `;
 
     return this.generateResponse(prompt);
@@ -186,11 +223,10 @@ Please provide:
 1. Workflow improvement recommendations
 2. Technology integration suggestions
 3. Staff efficiency tips
-4. Customer service enhancements
-5. Compliance considerations
-6. Implementation timeline
+4. Implementation timeline
 
 Focus on practical, cost-effective solutions for a Kenyan pharmacy setting.
+Keep response under 300 words.
 `;
 
     return this.generateResponse(prompt);
@@ -204,12 +240,24 @@ Focus on practical, cost-effective solutions for a Kenyan pharmacy setting.
   // Method to validate API key and connection
   async testConnection() {
     try {
-      const result = await this.model.generateContent('Hello, test connection for pharmacy AI assistant.');
+      const result = await this.model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: 'Hello, test connection for pharmacy AI assistant. Respond with "Connected successfully"' }] }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 50,
+        },
+      });
+      
+      const response = await result.response;
+      const text = response.text();
+      
       return {
         success: true,
-        message: 'Gemini API connection successful'
+        message: 'Gemini AI connection successful',
+        response: text
       };
     } catch (error) {
+      console.error('Gemini connection test failed:', error);
       return {
         success: false,
         error: error.message
