@@ -1,52 +1,66 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15
     container_name: pharmacy_postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: pharmacy_db
       POSTGRES_USER: pharmacy_user
-      POSTGRES_PASSWORD: pharmacy_password
+      POSTGRES_PASSWORD: pharmacy_secure_password
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5432:5432"
+      - "5436:5432"
     networks:
       - pharmacy_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pharmacy_user -d pharmacy_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # ChromaDB Vector Database
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: pharmacy_chromadb
-    restart: unless-stopped
-    environment:
-      IS_PERSISTENT: TRUE
-      PERSIST_DIRECTORY: /chroma/chroma
-    volumes:
-      - chromadb_data:/chroma/chroma
-    ports:
-      - "8000:8000"
-    networks:
-      - pharmacy_network
-
-  # Redis (for session storage and caching)
+  # Redis for Caching and Sessions
   redis:
     image: redis:7-alpine
     container_name: pharmacy_redis
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass pharmacy_redis_password
     volumes:
       - redis_data:/data
     ports:
       - "6379:6379"
     networks:
       - pharmacy_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
-  # Backend API Server
+  # ChromaDB for Vector Database (AI Knowledge Base)
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: pharmacy_chromadb
+    restart: unless-stopped
+    environment:
+      - CHROMA_HOST=0.0.0.0
+      - CHROMA_PORT=8000
+      - ALLOW_RESET=TRUE
+    volumes:
+      - chromadb_data:/chroma/chroma
+    ports:
+      - "8000:8000"
+    networks:
+      - pharmacy_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # API Server (Node.js + Express)
   api:
     build:
       context: .
@@ -54,100 +68,108 @@ services:
     container_name: pharmacy_api
     restart: unless-stopped
     environment:
-      NODE_ENV: production
-      PORT: 5000
-      DATABASE_URL: postgresql://pharmacy_user:pharmacy_password@postgres:5432/pharmacy_db
-      CHROMA_HOST: chromadb
-      CHROMA_PORT: 8000
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
-      AFRICAS_TALKING_API_KEY: ${AFRICAS_TALKING_API_KEY}
-      AFRICAS_TALKING_USERNAME: ${AFRICAS_TALKING_USERNAME}
+      # Database Configuration
+      - DATABASE_URL=postgresql://pharmacy_user:pharmacy_secure_password@postgres:5432/pharmacy_db
+      
+      # Redis Configuration
+      - REDIS_URL=redis://:pharmacy_redis_password@redis:6379
+      
+      # Clerk Authentication
+      - CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+      
+      # AI Services
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      
+      # ChromaDB
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      
+      # Server Configuration
+      - NODE_ENV=production
+      - PORT=5000
+      - CORS_ORIGIN=http://localhost:3000
+      
+      # Security
+      - JWT_SECRET=${JWT_SECRET:-pharmacy_jwt_secret_change_in_production}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-pharmacy_encryption_key_32_chars}
+      - SESSION_SECRET=${SESSION_SECRET:-pharmacy_session_secret_change_me}
+      
+      # External Services
+      - AFRICAS_TALKING_USERNAME=${AFRICAS_TALKING_USERNAME:-sandbox}
+      - AFRICAS_TALKING_API_KEY=${AFRICAS_TALKING_API_KEY}
     volumes:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
     ports:
       - "5000:5000"
-    depends_on:
-      - postgres
-      - chromadb
-      - redis
     networks:
       - pharmacy_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # Frontend Client (React)
-  client:
+  # Web Client (React + Vite)
+  web:
     build:
       context: ./client
       dockerfile: Dockerfile
-    container_name: pharmacy_client
+    container_name: pharmacy_web
     restart: unless-stopped
     environment:
-      VITE_API_URL: http://localhost:5000
+      - VITE_CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
+      - VITE_API_BASE_URL=http://localhost:5000/api
     ports:
       - "3000:3000"
-    depends_on:
-      - api
     networks:
       - pharmacy_network
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # Nginx Reverse Proxy (for production)
+  # Nginx Reverse Proxy
   nginx:
     image: nginx:alpine
     container_name: pharmacy_nginx
     restart: unless-stopped
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - ./ssl:/etc/nginx/ssl
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
       - "80:80"
       - "443:443"
+    networks:
+      - pharmacy_network
     depends_on:
       - api
-      - client
-    networks:
-      - pharmacy_network
+      - web
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # Monitoring with Prometheus (optional)
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: pharmacy_prometheus
-    restart: unless-stopped
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    ports:
-      - "9090:9090"
-    networks:
-      - pharmacy_network
-    profiles:
-      - monitoring
-
-  # Grafana for visualization (optional)
-  grafana:
-    image: grafana/grafana:latest
-    container_name: pharmacy_grafana
-    restart: unless-stopped
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
-    volumes:
-      - grafana_data:/var/lib/grafana
-    ports:
-      - "3001:3000"
-    networks:
-      - pharmacy_network
-    profiles:
-      - monitoring
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  chromadb_data:
+    driver: local
 
 networks:
   pharmacy_network:
     driver: bridge
-
-volumes:
-  postgres_data:
-  chromadb_data:
-  redis_data:
-  prometheus_data:
-  grafana_data:
